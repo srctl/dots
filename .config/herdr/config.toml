@@ -29,9 +29,19 @@ focus_pane_right = "prefix+l"
 split_vertical = "prefix+|"
 split_horizontal = "prefix+minus"
 
+# Copy the active tab's name to the macOS clipboard.
+[[keys.command]]
+key = "prefix+y"
+type = "shell"
+command = "\"$HERDR_BIN_PATH\" tab get \"$HERDR_ACTIVE_TAB_ID\" | jq -r '.result.tab.label' | /usr/bin/pbcopy"
+description = "copy active tab name"
+
 [theme]
 name = "vesper"
 auto_switch = false
 
 [ui]
 agent_panel_sort = "priority"
+
+[experimental]
+kitty_graphics = true

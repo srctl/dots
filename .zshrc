@@ -944,3 +944,6 @@ export PATH=$HOME/.volta/bin:$PATH
 
 # Pi
 export PATH="/Users/scottrichardson/.volta/tools/image/node/24.15.0/bin:$PATH"
+# Allow pi-fff to index $HOME when Pi is launched there.
+unset FFF_ENABLE_HOME_SCAN
+

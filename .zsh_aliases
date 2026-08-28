@@ -21,6 +21,15 @@ alias dt="dotctl"
 alias avante='nvim -c "lua vim.defer_fn(function()require(\"avante.api\").zen_mode()end, 100)"'
 alias pair='nvim . -c "lua vim.defer_fn(function()require(\"pair\").open()end, 100)"'
 
+unalias icat 2>/dev/null
+icat() {
+    kitten icat \
+        --transfer-mode=stream \
+        --stdin=no \
+        --use-window-size "${COLUMNS},${LINES},$((COLUMNS * 8)),$((LINES * 16))" \
+        "$@"
+}
+
 
 # Set OPENAI_API_KEY in a private environment file.
 

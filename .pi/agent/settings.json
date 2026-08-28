@@ -1,9 +1,9 @@
 {
-  "lastChangelogVersion": "0.84.2",
+  "lastChangelogVersion": "0.84.3",
   "theme": "dark",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "xhigh",
   "enableInstallTelemetry": false,
   "defaultProjectTrust": "always",
   "tuiMode": "fullscreen",
@@ -12,8 +12,18 @@
     "npm:pi-web-access",
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:pi-lens",
-    "npm:pi-hermes-memory",
+    {
+      "source": "npm:pi-hermes-memory",
+      "extensions": [
+        "-src/index.ts"
+      ]
+    },
     "npm:pi-context-view",
     "npm:@ff-labs/pi-fff"
+  ],
+  "skills": [
+    "-skills/bb-cli/SKILL.md",
+    "-skills/find-skills/SKILL.md",
+    "+skills/use-railway/SKILL.md"
   ]
 }

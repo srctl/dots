@@ -20,8 +20,13 @@
 * Follow YAGNI: implement only what the current requirement needs. Do not add speculative abstractions, options, extension points, or future-proofing without a concrete use.
 * Prefer a one-liner for small, obvious operations when it remains clear. Do not compress branching, error handling, or multi-step logic into a one-liner merely to reduce line count.
 
-## Dependency setup in Git worktrees
+## Verification workflow
+* During implementation, run the smallest relevant test, typecheck, lint, or package check for the code being changed.
+* Use LSP diagnostics after edits and before broad test suites when a language server is available.
+* Run project-wide verification after the implementation stabilizes and before commit or handoff. Do not rerun unchanged broad checks after every small edit; rerun them only when later changes could affect the result.
+
+## Dependency setup
+* Do not install or reinstall dependencies when `node_modules` is present and neither the dependency manifests nor lockfile have changed.
 * In a new pnpm worktree with no `node_modules`, first run `corepack pnpm install --offline --frozen-lockfile`.
 * Retry without `--offline` only when pnpm reports that required packages or metadata are missing from its local store.
 * Treat DNS and connection failures during an online install as environment transport failures, not dependency or repository failures.
-* Do not reinstall dependencies when `node_modules` is present and the lockfile has not changed.

@@ -69,6 +69,7 @@ import {
   SUBAGENT_WAIT_TOOL_DESCRIPTION,
 } from "./src/prompt.ts";
 import { createDeferredResultDelivery } from "./src/result-delivery.ts";
+import { registerHerdrDelegation } from "./src/herdr/index.ts";
 import {
   createSubagentRuntime,
   runTool,
@@ -138,6 +139,9 @@ function resolveChildProjectTrust(options: {
 }
 
 export default function (pi: ExtensionAPI) {
+  // Visible Herdr children use a standalone task bridge, not nested delegation.
+  if (process.env.PI_HERDR_TASK_DIR) return;
+  registerHerdrDelegation(pi);
   let runtime: SubagentRuntime | undefined;
   let managerPromise: Promise<SubagentManagerShape> | undefined;
   let sessionContext: ExtensionContext | undefined;

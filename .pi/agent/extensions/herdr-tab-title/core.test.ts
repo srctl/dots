@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildTaskContext,
+  countCompletedTurns,
+  isAutoTitleDue,
   isInteractiveHerdrSession,
   isSolePaneTabResponse,
   normalizeExplicitTitle,
@@ -38,6 +40,7 @@ test("restores the latest durable title state", () => {
 
   assert.deepEqual(restoreState(entries), {
     autoAttempted: true,
+    lastAttemptTurn: 0,
     title: "Make dotctl agent-friendly",
   });
 });
@@ -74,6 +77,50 @@ test("requires a substantive completed agent turn before building title context"
 
   assert.match(context ?? "", /Make dotctl easier/);
   assert.match(context ?? "", /Updated the agent instructions/);
+});
+
+test("counts completed exchanges, not tool iterations or failed replies", () => {
+  const message = (role: string, stopReason?: string) => ({ type: "message", message: { role, stopReason } });
+  assert.equal(countCompletedTurns([
+    message("user"), message("assistant", "toolUse"), message("toolResult"),
+    message("assistant", "error"), message("assistant", "stop"),
+    message("assistant", "stop"), message("user"), message("assistant", "aborted"),
+  ]), 1);
+});
+
+test("titles the first exchange then every three completed exchanges", () => {
+  assert.equal(isAutoTitleDue({ autoAttempted: false }, 0), false);
+  assert.equal(isAutoTitleDue({ autoAttempted: false }, 1), true);
+  const state = { autoAttempted: true, lastAttemptTurn: 1 };
+  for (const turns of [1, 2, 3]) assert.equal(isAutoTitleDue(state, turns), false);
+  assert.equal(isAutoTitleDue(state, 4), true);
+});
+
+test("migrates one-shot state and preserves the cadence across reloads", () => {
+  const entries = [
+    { type: "message", message: { role: "user" } },
+    { type: "message", message: { role: "assistant", stopReason: "stop" } },
+    { type: "custom", customType: STATE_ENTRY_TYPE, data: { autoAttempted: true, title: "Old title" } },
+  ];
+  const state = restoreState(entries);
+  assert.equal(state.lastAttemptTurn, 1);
+  assert.equal(isAutoTitleDue(state, 3), false);
+  assert.equal(isAutoTitleDue(state, 4), true);
+  assert.deepEqual(restoreState([
+    { type: "custom", customType: STATE_ENTRY_TYPE, data: { ...state, lastAttemptTurn: 4 } },
+  ]), { ...state, lastAttemptTurn: 4 });
+});
+
+test("keeps the newest task when the context budget is exceeded", () => {
+  const entries = Array.from({ length: 4 }, () => [
+    { type: "message", message: { role: "user", content: "Implement the feature " + "x".repeat(6000) } },
+    { type: "message", message: { role: "assistant", stopReason: "stop", content: "y".repeat(3000) } },
+  ]).flat();
+  entries.push({ type: "message", message: { role: "user", content: "Now fix the latest authentication bug" } });
+  entries.push({ type: "message", message: { role: "assistant", stopReason: "stop", content: "Fixed the latest authentication bug" } });
+  const context = buildTaskContext(entries)!;
+  assert.ok(context.length <= 12_000);
+  assert.ok(context.endsWith("Fixed the latest authentication bug"));
 });
 
 test("normalizes generated titles without blindly copying a long response", () => {

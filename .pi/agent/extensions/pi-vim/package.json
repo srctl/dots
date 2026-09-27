@@ -1,0 +1,12 @@
+{
+  "name": "pi-vim",
+  "private": true,
+  "version": "0.1.5-local",
+  "type": "module",
+  "license": "MIT",
+  "pi": { "extensions": ["./index.ts"] },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}

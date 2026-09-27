@@ -5,6 +5,16 @@ trust.json
 sessions/
 settings.json.before-*
 
+# Runtime databases, memory, worker sessions, and local rollback copies
+/.pi-hermes-locks.sqlite*
+/fff/
+/herdr-delegation/
+/pi-hermes-memory/
+/projects-memory/
+/pi-vim.before-*/
+/tmp/
+/npm/
+
 # Reinstallable or generated files
 node_modules/
 dist/

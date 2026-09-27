@@ -1,7 +1,9 @@
 export const STATE_ENTRY_TYPE = "herdr-tab-title";
+export const RETITLE_EVERY_TURNS = 3;
 
 export interface TabTitleState {
   autoAttempted: boolean;
+  lastAttemptTurn?: number;
   title?: string;
 }
 
@@ -41,15 +43,39 @@ const textFromContent = (content: unknown): string => {
     .trim();
 };
 
+// A turn is a user request followed by a completed reply, not a tool iteration.
+export const countCompletedTurns = (entries: readonly SessionEntryLike[]): number => {
+  let turns = 0;
+  let pendingUser = false;
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    if (entry.message?.role === "user") pendingUser = true;
+    if (pendingUser && entry.message?.role === "assistant" && entry.message.stopReason === "stop") {
+      turns++;
+      pendingUser = false;
+    }
+  }
+  return turns;
+};
+
+export const isAutoTitleDue = (state: TabTitleState, completedTurns: number): boolean =>
+  completedTurns > 0 &&
+  (!state.autoAttempted || completedTurns - (state.lastAttemptTurn ?? 0) >= RETITLE_EVERY_TURNS);
+
 export const restoreState = (entries: readonly SessionEntryLike[]): TabTitleState => {
   let state: TabTitleState = { autoAttempted: false };
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
     if (entry.type !== "custom" || entry.customType !== STATE_ENTRY_TYPE) continue;
     if (!entry.data || typeof entry.data !== "object") continue;
-    const data = entry.data as { autoAttempted?: unknown; title?: unknown };
+    const data = entry.data as { autoAttempted?: unknown; title?: unknown; lastAttemptTurn?: unknown };
     if (typeof data.autoAttempted !== "boolean") continue;
     state = {
       autoAttempted: data.autoAttempted,
+      // Older one-shot states resume periodic naming from their saved position.
+      lastAttemptTurn: typeof data.lastAttemptTurn === "number" &&
+        Number.isSafeInteger(data.lastAttemptTurn) && data.lastAttemptTurn >= 0
+        ? data.lastAttemptTurn
+        : countCompletedTurns(entries.slice(0, index)),
       title: typeof data.title === "string" ? data.title : undefined,
     };
   }
@@ -82,7 +108,7 @@ export const buildTaskContext = (entries: readonly SessionEntryLike[]): string |
   }
 
   if (!hasSubstantiveUser || !hasCompletedAssistant) return undefined;
-  return messages.slice(-8).join("\n\n").slice(0, 12_000);
+  return messages.slice(-8).join("\n\n").slice(-12_000);
 };
 
 export const normalizeGeneratedTitle = (raw: string): string | undefined => {

@@ -4,6 +4,8 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   ReadonlyFooterDataProvider,
+  Theme,
+  ThemeColor,
 } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
@@ -25,6 +27,19 @@ interface RenderableNode {
 
 interface DashboardTui extends RenderableNode {
   requestRender(force?: boolean): void;
+}
+
+const VIM_MODE_STATUS = "vim-mode";
+const LENS_LSP_STATUS = "pi-lens-lsp";
+const LENS_DIAGNOSTICS_EVENT = "pilens:diagnostics";
+
+interface ProblemCounts {
+  errors: number;
+  warnings: number;
+}
+
+interface LensDiagnosticsEvent {
+  files: Array<{ path: string; diagnostics: Array<{ severity: string }> }>;
 }
 
 const RESET = "\x1b[0m";
@@ -148,6 +163,37 @@ function formatDirectory(cwd: string) {
   return sanitizeTerminalLabel(display);
 }
 
+function isLensDiagnosticsEvent(value: unknown): value is LensDiagnosticsEvent {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { files?: unknown }).files)
+  );
+}
+
+function vimModeColor(mode: string): ThemeColor {
+  if (mode.endsWith("INSERT")) return "success";
+  if (mode.includes("VISUAL")) return "warning";
+  return "accent";
+}
+
+function formatProblems(
+  problemsByFile: Map<string, ProblemCounts>,
+  theme: Theme,
+) {
+  let errors = 0;
+  let warnings = 0;
+  for (const counts of problemsByFile.values()) {
+    errors += counts.errors;
+    warnings += counts.warnings;
+  }
+
+  const parts = [];
+  if (errors > 0) parts.push(theme.fg("error", `●${errors}E`));
+  if (warnings > 0) parts.push(theme.fg("warning", `!${warnings}W`));
+  return parts.join(" ");
+}
+
 function center(text: string, width: number) {
   const padding = Math.max(0, Math.floor((width - visibleWidth(text)) / 2));
   return truncateToWidth(`${" ".repeat(padding)}${text}`, width);
@@ -193,6 +239,26 @@ export default function uiCustomization(pi: ExtensionAPI) {
     requestRender?.();
   });
 
+  // pi-lens re-sends the full diagnostic list for each file it re-checks, and
+  // an empty list once a file is clean, so replacing by path keeps the totals
+  // current. These counts stand in for pi-lens's multi-line widget, which is
+  // hidden in ~/.pi-lens/config.json.
+  const problemsByFile = new Map<string, ProblemCounts>();
+  const stopDiagnosticsListener = pi.events.on(
+    LENS_DIAGNOSTICS_EVENT,
+    (value) => {
+      if (!isLensDiagnosticsEvent(value)) return;
+      for (const file of value.files) {
+        const severities = file.diagnostics.map((d) => d.severity);
+        const errors = severities.filter((s) => s === "error").length;
+        const warnings = severities.filter((s) => s === "warning").length;
+        if (errors + warnings === 0) problemsByFile.delete(file.path);
+        else problemsByFile.set(file.path, { errors, warnings });
+      }
+      requestRender?.();
+    },
+  );
+
   function scheduleThemeRemoval(tui: DashboardTui) {
     for (const timer of themeRemovalTimers) clearTimeout(timer);
     themeRemovalTimers = [];
@@ -235,30 +301,52 @@ export default function uiCustomization(pi: ExtensionAPI) {
       return {
         invalidate() {},
         render(width: number) {
+          const statuses = new Map(footerData.getExtensionStatuses());
+
+          // The Vim mode leads the row, like a Vim statusline.
+          const vimMode = statuses.get(VIM_MODE_STATUS);
+          statuses.delete(VIM_MODE_STATUS);
+          const mode = vimMode
+            ? `${theme.bold(theme.fg(vimModeColor(vimMode), vimMode))}  `
+            : "";
+
+          // Diagnostic counts sit beside pi-lens's LSP indicator.
+          const problems = formatProblems(problemsByFile, theme);
+          if (problems) {
+            const lsp = statuses.get(LENS_LSP_STATUS);
+            statuses.set(LENS_LSP_STATUS, lsp ? `${lsp} ${problems}` : problems);
+          }
+
           const directory = theme.fg("text", formatDirectory(ctx.cwd));
           const branch = gitInfo.branch
             ? theme.fg("muted", ` · ${gitInfo.branch}`)
             : "";
-          const model = modelInfo.provider
-            ? `${modelInfo.provider}/${modelInfo.modelId} · ${modelInfo.thinking}`
-            : modelInfo.modelId;
+          const left = `${mode}${directory}${branch}`;
+          const model = theme.fg(
+            "muted",
+            modelInfo.provider
+              ? `${modelInfo.provider}/${modelInfo.modelId} · ${modelInfo.thinking}`
+              : modelInfo.modelId,
+          );
 
-          const lines = [
-            columns(`${directory}${branch}`, theme.fg("muted", model), width),
-          ];
-
-          // Extension statuses render after the dashboard line, one per row.
-          const statuses = footerData.getExtensionStatuses();
-          const statusLines = Array.from(statuses.entries())
+          const separator = theme.fg("muted", " · ");
+          const statusText = Array.from(statuses.entries())
+            .filter(([, text]) => text.trim())
             .sort(([a], [b]) => a.localeCompare(b))
-            .flatMap(([, text]) => text.split("\n"));
-          for (const statusLine of statusLines) {
-            lines.push(
-              truncateToWidth(statusLine, width, theme.fg("dim", "...")),
-            );
-          }
+            .map(([, text]) => text.replace(/\s*\n\s*/g, " "))
+            .join(separator);
+          if (!statusText) return [columns(left, model, width)];
 
-          return lines;
+          // Statuses share the row with the model when everything fits, and
+          // move to a second row when the terminal is too narrow.
+          const right = `${statusText}${separator}${model}`;
+          if (visibleWidth(left) + visibleWidth(right) < width) {
+            return [columns(left, right, width)];
+          }
+          return [
+            columns(left, model, width),
+            truncateToWidth(statusText, width, theme.fg("dim", "...")),
+          ];
         },
       };
     });
@@ -271,6 +359,7 @@ export default function uiCustomization(pi: ExtensionAPI) {
     title = formatDirectory(ctx.cwd);
     modelInfo = emptyModelInfoState();
     gitInfo = emptyGitInfoState();
+    problemsByFile.clear();
     install(ctx);
   });
 
@@ -281,6 +370,7 @@ export default function uiCustomization(pi: ExtensionAPI) {
   pi.on("session_shutdown", (_event, ctx) => {
     stopModelListener();
     stopGitListener();
+    stopDiagnosticsListener();
     for (const timer of themeRemovalTimers) clearTimeout(timer);
     themeRemovalTimers = [];
     activeTui = undefined;

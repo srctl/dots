@@ -1,0 +1,14 @@
+#!/bin/sh
+
+if [ "$#" -eq 1 ] && [ "${HERDR_ENV:-}" = "1" ]; then
+  case "$1" in
+    file://*)
+      helper="$HOME/.local/bin/herdr-nvim-open"
+      if [ -x "$helper" ]; then
+        exec "$helper" "$1"
+      fi
+      ;;
+  esac
+fi
+
+exec /usr/bin/open "$@"

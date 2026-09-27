@@ -1,0 +1,4 @@
+# Only user configuration belongs in dotfiles; everything else is runtime state.
+*
+!.gitignore
+!config.json
